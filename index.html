@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Aneurysm Run Explorer</title>
+<meta content="cover" name="claude:viewport-fit-sides"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<style>
+/* Layout: one column of plots. A thin control strip above each plot does the filtering; the plots carry the content. */
+:root {
+  --bg: #f7f8f9; --surface: #ffffff; --ink: #14171a; --ink-2: #4f5861; --muted: #8a939c; --line: #e2e6ea;
+  --accent: #2a78d6; --chip: #eef1f4; --chip-on: #14171a; --chip-on-ink: #ffffff;
+  --avx2: #2a78d6; --sse3: #d98a00; --novec: #00926b; --compute: #c4cad0; --killed: #d6403f; --good: #1f8a3c;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #111417; --surface: #171b1f; --ink: #e8ecef; --ink-2: #a7b0b8; --muted: #6f7881; --line: #2a3036;
+  --accent: #5b9cf0; --chip: #22282d; --chip-on: #e8ecef; --chip-on-ink: #111417;
+  --avx2: #5b9cf0; --sse3: #f0a92e; --novec: #2fbf93; --compute: #3c444b; --killed: #f06a69; --good: #4cc46e;
+  color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #111417; --surface: #171b1f; --ink: #e8ecef; --ink-2: #a7b0b8; --muted: #6f7881; --line: #2a3036;
+  --accent: #5b9cf0; --chip: #22282d; --chip-on: #e8ecef; --chip-on-ink: #111417;
+  --avx2: #5b9cf0; --sse3: #f0a92e; --novec: #2fbf93; --compute: #3c444b; --killed: #f06a69; --good: #4cc46e;
+  color-scheme: dark }
+body { background: var(--bg); color: var(--ink); font: 14px/1.45 var(--sans); }
+.wrap { max-width: 1240px; margin: 0 auto; padding-block: 20px 48px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 24px; }
+h1 { font-size: 20px; font-weight: 600; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+.meta { color: var(--ink-2); font: 12px var(--mono); font-variant-numeric: tabular-nums; }
+nav { display: flex; gap: 4px; margin-block: 16px 12px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+nav button { font: 500 14px var(--sans); color: var(--ink-2); background: none; border: 0; padding: 8px 12px;
+  border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer; white-space: nowrap; }
+nav button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--ink); }
+.controls { display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center; margin-block: 4px 12px; }
+.group { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.group > span { font: 11px var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-right: 4px; }
+.chip { font: 13px var(--sans); color: var(--ink); background: var(--chip); border: 1px solid transparent;
+  border-radius: 999px; padding: 3px 11px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+.chip[aria-pressed="true"] { background: var(--chip-on); color: var(--chip-on-ink); }
+.chip .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.chip:focus-visible, nav button:focus-visible, th button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.plot { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; min-width: 0; }
+.plot + .plot, .pair + .plot, .plot + .pair { margin-top: 12px; }
+.pair > .plot { margin-top: 0; }
+.plot { overflow: hidden; }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 760px) { .pair { grid-template-columns: 1fr; } }
+.note { color: var(--ink-2); font-size: 12.5px; max-width: 75ch; margin-top: 10px; }
+.empty { padding: 48px 16px; text-align: center; color: var(--ink-2); }
+.tablewrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+th, td { padding: 6px 10px; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+th button { font: 500 12px var(--mono); color: var(--ink-2); background: none; border: 0; padding: 0; cursor: pointer; }
+td { font: 13px var(--mono); }
+td .tag { font: 12px var(--sans); padding: 1px 7px; border-radius: 999px; background: var(--chip); }
+tr:last-child td { border-bottom: 0; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+.plot-guide { max-width: none; display: grid; gap: 5px; padding: 12px 14px; border-left: 3px solid var(--accent); background: var(--surface); }
+.plot-guide strong { display: inline-block; min-width: 110px; color: var(--ink); font-weight: 600; }
+.key-avx2 { color: var(--avx2); font-weight: 600; }
+.key-sse3 { color: var(--sse3); font-weight: 600; }
+.key-novec { color: var(--novec); font-weight: 600; }
+.plot-guide .key-slower { color: var(--killed); }
+.key-faster { color: var(--good); }
+.line-key { display: inline-block; width: 22px; border-top: 2px solid var(--ink-2); vertical-align: middle; margin-right: 4px; }
+.line-key.dotted { border-top-style: dotted; }
+.task-tag { display: inline-block; margin-right: 7px; font: 600 10px var(--mono); letter-spacing: .03em; padding: 3px 5px; border-radius: 4px; color: var(--accent); background: var(--chip); }
+nav button[data-tab="profile"] { margin-left: 12px; border-left: 1px solid var(--line); }
+@media (max-width: 600px) { .plot-guide strong { min-width: 90px; } }
+
+.mpi-slide{background:white;color:#161616;border:1px solid #d6d6dc;font-family:Arial,sans-serif;overflow:hidden}
+.mpi-slide-banner{padding:22px 28px;background:radial-gradient(ellipse at 40% 0%,#53839880,transparent 40%),repeating-linear-gradient(140deg,#ffffff06 0 3px,transparent 3px 12px),linear-gradient(110deg,#391336,#102b43 58%,#070e18);border-bottom:4px solid #31236d;color:white;font-size:clamp(24px,3.5vw,44px);font-weight:400;line-height:1.2;letter-spacing:.02em}
+.mpi-slide-body{padding:24px 48px 30px;border-left:18px solid #e3e3e9}
+.mpi-slide h2{font-size:27px;margin:0 0 30px;font-weight:700;color:#111}
+.mpi-summary-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:42px}
+.mpi-summary{min-width:0}.mpi-metrics{border-top:1px solid #eee;padding-top:10px;color:#2ca9dc;font-size:14px;line-height:1.45}
+.mpi-metric-title{font-size:23px;color:#18b6e6}.mpi-percent{color:#c55e3d}.mpi-muted{color:#747474;font-size:12px}
+.mpi-imbalance{margin:16px 0 20px 22px;font-size:13px;line-height:1.5}.mpi-imbalance span{color:#269bcf}
+.mpi-top-title{display:flex;justify-content:space-between;font-size:12px;gap:4px;color:#666;margin-bottom:4px}
+.mpi-summary table{width:100%;border-collapse:collapse;font-family:Arial,sans-serif;table-layout:fixed}
+.mpi-summary td{font:13px/1.4 Arial,sans-serif;padding:3px 0;border-bottom:1px solid #eee;white-space:nowrap;background:white;color:#777}
+.mpi-summary td:last-child{text-align:right;color:#209bd1;width:31%}.mpi-summary td:first-child{text-align:left;overflow-wrap:anywhere}
+.mpi-summary-label{text-align:center;font-size:17px;margin:24px 0 0}.mpi-summary-label small{display:block;font-size:11px;color:#777;margin-top:5px}
+.mpi-slide-note{font-size:13px;line-height:1.6;margin:26px 0 0}.mpi-slide-note code{color:#268b56;background:none;font-size:inherit;font-family:monospace;padding:0}
+.mpi-slide-footer{padding:10px 28px;background:#ebebed;border-top:3px solid #bdbdc3;color:#777;font-size:11px;letter-spacing:.06em}
+.mpi-unavailable{color:#909090;font-size:14px;line-height:1.7;min-height:254px;border-top:1px solid #eee;padding-top:12px}
+@media(max-width:760px){.mpi-summary-grid{grid-template-columns:1fr;gap:30px}.mpi-slide-body{padding:22px;border-left-width:8px}.mpi-slide h2{margin-bottom:22px}.mpi-unavailable{min-height:80px}}
+@media print{.mpi-summary-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:20px}.mpi-slide{break-inside:avoid}.mpi-slide-banner{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+
+/* Keep reference content structure inside the dashboard theme. */
+.mpi-slide{background:var(--surface,#fff);color:var(--ink,#172d3c);border:1px solid var(--line,#dbe4e9);border-radius:6px;font-family:var(--sans,system-ui)}
+.mpi-slide-banner{padding:18px 24px;background:none;border-bottom:1px solid var(--line,#dbe4e9);color:var(--ink,#172d3c);font-size:22px;font-weight:600;letter-spacing:0;text-transform:none}
+.mpi-slide-body{padding:22px 24px;border-left:0}.mpi-slide h2{color:var(--ink,#172d3c);font-size:14px;letter-spacing:.06em;margin-bottom:26px}
+.mpi-summary-grid{gap:32px}.mpi-metrics,.mpi-unavailable{border-color:var(--line,#dbe4e9)}
+.mpi-metrics,.mpi-metric-title,.mpi-imbalance span,.mpi-summary td:last-child{color:var(--accent,#2a78d6)}
+.mpi-percent{color:var(--killed,#c55e3d)}.mpi-muted,.mpi-top-title,.mpi-summary td,.mpi-summary-label small,.mpi-unavailable{color:var(--ink-2,#526879)}
+.mpi-summary table,.mpi-summary td{background:transparent;border-color:var(--line,#dbe4e9);font-family:inherit}.mpi-summary td{font-family:inherit}
+.mpi-slide-footer{display:none}.mpi-slide-note code{color:var(--novec,#268b56)}
+.analysis-heading{font-size:21px;margin:6px 0 18px;font-weight:600}.analysis-case{font-size:15px;font-weight:600;margin:24px 0 12px;color:var(--ink)}
+.analysis-case small{font-weight:400;color:var(--ink-2);font-size:12px;margin-left:10px}.analysis-caption{font-size:12.5px;color:var(--ink-2);margin:10px 0 24px}
+
+@media(max-width:760px){.mpi-summary-grid[style]{grid-template-columns:1fr!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+<h1>Aneurysm Run Explorer</h1>
+
+</header>
+<nav id="tabs" role="tablist">
+<button aria-selected="true" data-tab="speed" role="tab"><span class="task-tag">TASK 1</span>Speed over time</button>
+<button aria-selected="false" data-tab="scaling" role="tab"><span class="task-tag">TASK 1</span>Scaling</button>
+<button aria-selected="false" data-tab="imbalance" role="tab"><span class="task-tag">TASK 1</span>MPI imbalance</button>
+<button aria-selected="false" data-tab="table" role="tab"><span class="task-tag">TASK 1</span>All results</button>
+<button aria-selected="false" data-tab="profile" role="tab"><span class="task-tag">TASK 3</span>MPI profile</button>
+</nav>
+<section data-panel="speed">
+<div class="controls" id="speed-controls"></div>
+<div class="plot" id="speed-plot"></div>
+<div class="plot" id="speed-bars"></div>
+<div aria-label="Plot guide" class="note plot-guide">
+<div><strong>Read</strong> Seconds/step &#183; every 200 steps &#183; lower is faster.</div>
+<div><strong>Build</strong> <span class="key-avx2">AVX2+SSE3</span> &#183; <span class="key-sse3">SSE3 only</span> &#183; <span class="key-novec">No intrinsics</span></div>
+<div><strong>Monitoring</strong> <span class="line-key"></span> on &#160; <span class="line-key dotted"></span> off</div>
+<div title="Change threshold: 12%. Compares median speed over 2,000 steps before and after. Candidate causes: preceding 25 minutes."><strong>Changes &#8805;12%</strong> <span class="key-slower">&#9679; filled: slower</span> &#183; <span class="key-faster">&#9675; hollow: faster</span> &#183; hover for causes.</div>
+<div><strong>Compare</strong> Clock time reveals simultaneous changes.</div>
+<div><strong>Explore</strong> Legend: click hide, double-click isolate &#183; drag to zoom.</div>
+</div>
+</section>
+<section data-panel="scaling" hidden="">
+<h2 class="analysis-heading">CPU scaling analysis</h2>
+<h3 class="analysis-case">Case A: Monitoring on / off <small>AVX2 + SSE3 &#183; 8 workers/node</small></h3>
+<div class="pair"><div class="plot" id="monitor-time"></div><div class="plot" id="monitor-speedup"></div></div>
+<p class="analysis-caption">Monitoring changes runtime; shared-lab waiting obscures its cost.</p>
+<h3 class="analysis-case">Case B: SIMD analysis <small>Monitoring on &#183; 8 workers/node</small></h3>
+<div class="pair"><div class="plot" id="simd-time"></div><div class="plot" id="simd-speedup"></div></div>
+<p class="analysis-caption">No intrinsics build consistently wins. Speedup uses each series' 4-node baseline.</p>
+<h3 class="analysis-case">Case C: Workers per node <small>AVX2 + SSE3 &#183; Monitoring on</small></h3>
+<div class="pair"><div class="plot" id="workers-time"></div><div class="plot" id="workers-speedup"></div></div>
+<p class="analysis-caption">New best: 186.03 MLUPS &#183; 16 nodes &#183; 4 workers/node. Each series uses its own 4-node baseline.</p>
+</section>
+<section data-panel="imbalance" hidden="">
+<h2 class="analysis-heading">MPI imbalance</h2>
+<div class="controls" id="imbalance-controls"></div>
+<div class="plot" id="imbalance-plot"></div>
+<p class="analysis-caption"><span class="key-avx2">MPI time / application time</span> by rank. Rank 0 coordinates; workers show unequal waiting.</p>
+</section>
+<section data-panel="table" hidden="">
+<div class="tablewrap"><table id="results"></table></div>
+<div class="note plot-guide">
+<div><strong>Time</strong> report.txt: Simulation total.</div>
+<div><strong>MLUPS</strong> 49,484,674 &#215; 50,000 / seconds / 10&#8310;.</div>
+<div><strong>Sort</strong> Click a column.</div>
+</div>
+</section>
+<section data-panel="profile" hidden="">
+<div class="mpi-slide"><div class="mpi-slide-banner">Top MPI calls for CPU</div><div class="mpi-slide-body"><h2>Local lab runs - all nodes pinned</h2><div class="mpi-summary-grid" style="grid-template-columns:repeat(2,minmax(0,1fr))"><div class="mpi-summary"><div class="mpi-metrics"><div class="mpi-metric-title">MPI Time</div><div title="Sum of exported per-rank MPI seconds">2,059.00 s <span class="mpi-muted">(rank-summed)</span></div><div><span class="mpi-percent">37.11%</span> <span class="mpi-muted">of all-rank application time</span></div></div><div class="mpi-imbalance">MPI Imbalance<br/><span>N/A*</span></div><div class="mpi-top-title"><span>TOP 5 MPI Functions</span><span>% of App Time</span></div><table aria-label="Top MPI calls, 2 nodes"><tbody><tr><td>MPI_Waitall</td><td>36.8874%</td></tr><tr><td>MPI_Gather</td><td>0.1912%</td></tr><tr><td>MPI_Isend</td><td>0.0029%</td></tr><tr><td>MPI_Type_free</td><td>0.0025%</td></tr><tr><td>MPI_Irecv</td><td>0.0010%</td></tr></tbody></table><div class="mpi-summary-label">2 Nodes with pinning<small>400 steps &#183; 7 workers/node</small></div></div><div class="mpi-summary"><div class="mpi-metrics"><div class="mpi-metric-title">MPI Time</div><div title="Sum of exported per-rank MPI seconds">3,909.50 s <span class="mpi-muted">(rank-summed)</span></div><div><span class="mpi-percent">35.06%</span> <span class="mpi-muted">of all-rank application time</span></div></div><div class="mpi-imbalance">MPI Imbalance<br/><span>N/A*</span></div><div class="mpi-top-title"><span>TOP 5 MPI Functions</span><span>% of App Time</span></div><table aria-label="Top MPI calls, 4 nodes"><tbody><tr><td>MPI_Waitall</td><td>34.8685%</td></tr><tr><td>MPI_Gather</td><td>0.1720%</td></tr><tr><td>MPI_Isend</td><td>0.0069%</td></tr><tr><td>MPI_Type_free</td><td>0.0056%</td></tr><tr><td>MPI_Irecv</td><td>0.0024%</td></tr></tbody></table><div class="mpi-summary-label">4 Nodes with pinning<small>800 steps &#183; 7 workers/node</small></div></div></div><p class="mpi-slide-note"><code>MPI_Waitall</code> dominates both profiles. Next by recorded time: <code>MPI_Gather</code>, <code>MPI_Isend</code>.<br/><span class="mpi-muted">*Profiler imbalance metric unavailable. All-rank totals include coordinator rank 0; aggregate seconds are not wall time.</span></p></div><div class="mpi-slide-footer">TASK 3 &#183; MPI PROFILING</div></div>
+</section>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.34.0/plotly-basic.min.js"></script>
+<script src="data.js"></script>
+<script>
+(() => {
+const D = window.ISC_DATA;
+const $ = (id) => document.getElementById(id);
+if (!D) { document.querySelector(".wrap").insertAdjacentHTML("beforeend",
+  '<p class="empty">No data found. Run <code>cluster/make_dashboard.sh</code> to create dashboard/data.js next to this page.</p>'); return; }
+if (!window.Plotly) { document.querySelector(".wrap").insertAdjacentHTML("beforeend",
+  '<p class="empty">The plotting library did not load. Check the internet connection and reload.</p>'); return; }
+
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const BUILDS = { avx2: "AVX2+SSE3", sse3: "SSE3 only", novec: "no intrinsics" };
+const label = (r) => `${r.nodes} nodes \u00b7 ${BUILDS[r.build]} \u00b7 mon ${r.monitoring}` + (r.ppn !== 8 ? ` \u00b7 ${r.ppn}/node` : "");
+const done = D.results.length;
+
+// ---- shared plot styling -------------------------------------------------------------------
+function layout(extra) {
+  const ink2 = css("--ink-2"), line = css("--line");
+  const axis = { gridcolor: line, linecolor: line, zerolinecolor: line, tickfont: { color: ink2, size: 11 },
+                 title: { font: { color: ink2, size: 12 } }, automargin: true };
+  const base = { paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
+                 font: { family: css("--sans"), color: css("--ink"), size: 12 },
+                 margin: { l: 56, r: 16, t: 40, b: 48 }, hovermode: "closest",
+                 hoverlabel: { bgcolor: css("--surface"), bordercolor: line, font: { color: css("--ink"), family: css("--mono"), size: 12 } },
+                 legend: { font: { size: 11, color: ink2 }, orientation: "h", y: -0.18, x: 0 },
+                 title: { font: { size: 13, color: css("--ink") }, x: 0.01, xanchor: "left" } };
+  const out = Object.assign({}, base, extra, { title: Object.assign({}, base.title, extra.title) });
+  for (const k of ["xaxis", "yaxis"]) out[k] = Object.assign({}, axis, extra[k] || {},
+    { title: Object.assign({}, axis.title, (extra[k] || {}).title) });
+  return out;
+}
+const CONFIG = { displaylogo: false, responsive: false, modeBarButtonsToRemove: ["lasso2d", "select2d", "autoScale2d"] };
+// Width is set from the container on every draw (and on resize), so plots never overflow on phones.
+const draw = (id, traces, lay) => { const el = $(id); if (!el.classList.contains("js-plotly-plot")) el.innerHTML = "";
+  Plotly.react(el, traces, layout(Object.assign({ width: el.clientWidth }, lay)), CONFIG); };
+
+// ---- chips ---------------------------------------------------------------------------------
+// A chip group keeps a Set of selected values; multi = several may be on, else exactly one.
+function chipGroup(container, title, options, selected, multi, onChange) {
+  const g = document.createElement("div"); g.className = "group";
+  g.innerHTML = `<span>${title}</span>`;
+  for (const [value, text, color] of options) {
+    const b = document.createElement("button"); b.className = "chip"; b.type = "button";
+    b.innerHTML = (color ? `<i class="dot" style="background:var(${color})"></i>` : "") + text;
+    b.setAttribute("aria-pressed", selected.has(value));
+    b.addEventListener("click", () => {
+      if (multi) { selected.has(value) ? selected.delete(value) : selected.add(value); }
+      else { selected.clear(); selected.add(value); }
+      for (const [i, el] of [...g.querySelectorAll(".chip")].entries())
+        el.setAttribute("aria-pressed", selected.has(options[i][0]));
+      onChange();
+    });
+    g.appendChild(b);
+  }
+  container.appendChild(g);
+}
+const uniq = (xs) => [...new Set(xs)].sort((a, b) => a - b);
+
+// ---- Speed over time ----------------------------------------------------------------------
+const S = { nodes: new Set(uniq(D.attempts.map((a) => a.nodes))), build: new Set(Object.keys(BUILDS)),
+            mon: new Set(["on", "off"]), ppn: new Set([8]), show: new Set(["done"]), x: new Set(["step"]),
+            smooth: new Set([5]), marks: new Set(["slow"]) };
+// centred moving average over k points (k = 1: raw)
+const smooth = (ys, k) => k <= 1 ? ys : ys.map((_, i) => { const a = Math.max(0, i - (k >> 1)), b = Math.min(ys.length, i + (k >> 1) + 1);
+  let t = 0; for (let j = a; j < b; j++) t += ys[j]; return t / (b - a); });
+(() => {
+  const c = $("speed-controls");
+  chipGroup(c, "Nodes", uniq(D.attempts.map((a) => a.nodes)).map((n) => [n, n]), S.nodes, true, drawSpeed);
+  chipGroup(c, "Build", Object.entries(BUILDS).map(([k, v]) => [k, v, `--${k}`]), S.build, true, drawSpeed);
+  chipGroup(c, "Monitoring", [["on", "on"], ["off", "off"]], S.mon, true, drawSpeed);
+  chipGroup(c, "Workers/node", uniq(D.attempts.map((a) => a.ppn)).map((n) => [n, n]), S.ppn, true, drawSpeed);
+  chipGroup(c, "Attempts", [["done", "finished"], ["all", "all, incl. killed"]], S.show, false, drawSpeed);
+  chipGroup(c, "X axis", [["step", "time step"], ["hours", "hours since start"], ["clock", "clock time"]], S.x, false, drawSpeed);
+  chipGroup(c, "Smoothing", [[1, "raw"], [5, "1k steps"], [25, "5k steps"]], S.smooth, false, drawSpeed);
+  chipGroup(c, "Markers", [["slow", "slowdowns"], ["both", "slowdowns + speed-ups"], ["none", "off"]], S.marks, false, drawSpeed);
+})();
+// Speed-change markers: the symbol says what most likely caused it (make_dashboard.py lists the candidates).
+const CAUSE = { ours: ["circle", "one of our own runs started or ended (shared network)"],
+                users: ["diamond", "other users' jobs on its machines or in the pool"],
+                lab: ["square", "lab-wide event"], none: ["x", "no recorded cause"] };
+const pad = (n) => String(n).padStart(2, "0");
+const clock = (start, h) => { const d = new Date(new Date(start).getTime() + h * 3600e3);
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; };
+function drawSpeed() {
+  const all = S.show.has("all");
+  const sel = D.attempts.filter((a) => S.nodes.has(a.nodes) && S.build.has(a.build) && S.mon.has(a.monitoring) &&
+    S.ppn.has(a.ppn) && a.series.length > 1 && (all || a.status === "done"));
+  const byHours = S.x.has("hours"), byClock = S.x.has("clock"), k = [...S.smooth][0];
+  const xOf = (a, p) => byClock ? clock(a.start, p[1]) : byHours ? p[1] : p[0];
+  const traces = sel.map((a) => {
+    const name = label(a) + (a.attempt > 1 ? ` \u00b7 try ${a.attempt}` : "");
+    const fate = a.status === "done" ? `done, ${a.mlups ? a.mlups.toFixed(1) + " MLUPS" : ""}` :
+                 a.status === "running" ? `running, step ${a.last_step.toLocaleString()}` :
+                 `killed at step ${a.last_step.toLocaleString()}: ${a.why}`;
+    return { type: "scatter", mode: "lines", name, legendgroup: name, x: a.series.map((p) => xOf(a, p)), y: smooth(a.series.map((p) => p[2]), k),
+      line: { color: css(`--${a.build}`), width: a.status === "done" ? 2 : 1.4, dash: a.monitoring === "on" ? "solid" : "dot",
+              shape: "linear" },
+      opacity: a.status === "done" ? 1 : 0.55,
+      hovertemplate: `<b>${name}</b><br>${byClock ? "%{x}" : `%{x:,} ${byHours ? "h" : "steps"}`} \u00b7 %{y:.3f} s/step<br>${fate}<br>` +
+        `started ${a.start.replace("T", " ")} on ${a.hosts.length} machines<extra></extra>` };
+  });
+  const runs = traces.length, few = runs <= 3, surf = css("--surface");
+  for (const t of traces) t.showlegend = runs <= 14;
+  if (!S.marks.has("none")) {
+    sel.forEach((a, n) => {
+      const ys = traces[n].y;
+      const js = a.jumps.filter((j) => j.change > 0 || S.marks.has("both"));
+      if (!js.length) return;
+      const kind = (j) => j.causes.length ? j.causes[0].kind : "none";
+      traces.push({ type: "scatter", mode: few ? "markers+text" : "markers", legendgroup: traces[n].name, showlegend: false,
+        x: js.map((j) => xOf(a, a.series[j.i])), y: js.map((j) => ys[j.i]),
+        marker: { size: 11, color: css(`--${a.build}`), line: { color: surf, width: 1.5 },
+                  symbol: js.map((j) => CAUSE[kind(j)][0] + (j.change > 0 ? "" : "-open")) },
+        text: js.map((j) => `${j.change > 0 ? "+" : ""}${Math.round(100 * j.change)}%`), textposition: "top center",
+        textfont: { color: css("--ink-2"), family: css("--mono"), size: 11 }, cliponaxis: false,
+        hovertemplate: js.map((j) => `<b>${j.change > 0 ? "slowed by " : "sped up by "}${Math.abs(Math.round(100 * j.change))}%</b>` +
+          ` at ${j.at} (step ${a.series[j.i][0].toLocaleString()})<br>${traces[n].name}<br>` +
+          (j.causes.length ? `likely: ${j.causes[0].text} (${j.causes[0].at})` +
+            j.causes.slice(1).map((c) => `<br>also: ${c.text} (${c.at})`).join("") : "no recorded cause nearby") + "<extra></extra>") });
+    });
+    // legend key for the marker symbols (grey: colour still belongs to the run)
+    for (const [kind, [sym, text]] of Object.entries(CAUSE)) traces.push({ type: "scatter", mode: "markers", x: [null], y: [null],
+      name: text, legendgroup: "key-" + kind, marker: { symbol: sym, size: 10, color: css("--muted") }, hoverinfo: "skip" });
+  }
+  // clock axis: lab-wide events as thin vertical lines
+  const xs = traces.slice(0, runs).flatMap((t) => t.x.length ? [t.x[0], t.x[t.x.length - 1]] : []).sort();
+  const shapes = !byClock || !xs.length ? [] : D.lab_events.filter((e) => { const x = e.at.replace("T", " ");
+    return x >= xs[0] && x <= xs[xs.length - 1]; }).map((e) => ({ type: "line", xref: "x", yref: "paper", x0: e.at.replace("T", " "),
+    x1: e.at.replace("T", " "), y0: 0, y1: 1, line: { color: css("--muted"), width: 1, dash: "dot" },
+    label: { text: e.short || e.text, textangle: -90, textposition: "end", font: { size: 10, color: css("--ink-2") }, xanchor: "right" } }));
+  if (!runs) { Plotly.purge("speed-plot"); $("speed-plot").innerHTML = '<p class="empty">No runs match these filters.</p>'; }
+  else draw("speed-plot", traces, { height: 500, title: { text: `${runs} attempts` }, shapes,
+    xaxis: Object.assign({ title: { text: byClock ? "clock time" : byHours ? "hours since launch" : "time step" } },
+      byClock ? { type: "date" } : { rangemode: "tozero" }),
+    yaxis: { title: { text: "seconds per time step" }, rangemode: "tozero" }, showlegend: true });
+
+  // MLUPS of the selected finished runs
+  const fin = D.results.filter((r) => S.nodes.has(r.nodes) && S.build.has(r.build) && S.mon.has(r.monitoring) && S.ppn.has(r.ppn))
+    .sort((a, b) => a.mlups - b.mlups);
+  if (!fin.length) { Plotly.purge("speed-bars"); $("speed-bars").innerHTML = '<p class="empty">No finished runs match these filters.</p>'; return; }
+  draw("speed-bars", [{ type: "bar", orientation: "h", y: fin.map(label), x: fin.map((r) => r.mlups),
+    marker: { color: fin.map((r) => css(`--${r.build}`)), line: { color: css("--surface"), width: 1 },
+              pattern: { shape: fin.map((r) => r.monitoring === "off" ? "/" : ""), fgcolor: css("--surface"), solidity: 0.25 } },
+    text: fin.map((r) => r.mlups.toFixed(1)), textposition: "outside", cliponaxis: false,
+    textfont: { color: css("--ink-2"), family: css("--mono"), size: 11 },
+    customdata: fin.map((r) => [(r.sim_s / 3600).toFixed(2), r.mlups_core.toFixed(2), r.workers]),
+    hovertemplate: "<b>%{y}</b><br>%{x:.1f} MLUPS \u00b7 %{customdata[1]} per core<br>%{customdata[0]} h simulation \u00b7 %{customdata[2]} workers<extra></extra>" }],
+    { height: 120 + 22 * fin.length, title: { text: "Total MLUPS (hatched = monitoring off)" },
+      margin: { l: 56, r: 48, t: 40, b: 40 }, xaxis: { title: { text: "MLUPS" }, rangemode: "tozero" },
+      yaxis: { automargin: true }, showlegend: false, bargap: 0.25 });
+}
+
+// ---- Task 1: CPU scaling and MPI imbalance ------------------------------------------------
+function drawScaling() {
+  const groups = [
+    ["monitor", [{name:"Monitoring on",build:"avx2",mon:"on",color:"--avx2"},{name:"Monitoring off",build:"avx2",mon:"off",color:"--sse3"}]],
+    ["simd", Object.keys(BUILDS).map((build)=>({name:BUILDS[build],build,mon:"on",color:`--${build}`}))],
+    ["workers", [4,8,12].map((ppn,i)=>({name:`${ppn} workers/node`,build:"avx2",mon:"on",ppn,color:["--avx2","--sse3","--novec"][i]}))]
+  ];
+  for (const [prefix, configs] of groups) {
+    const series = configs.map((c)=>({...c,rows:D.results.filter((r)=>r.ppn===(c.ppn||8) && r.build===c.build && r.monitoring===c.mon).sort((a,b)=>a.nodes-b.nodes)}));
+    for (const speedup of [false,true]) {
+      const traces = series.filter((c)=>c.rows.length).map((c)=>({type:"scatter",mode:"lines+markers",name:c.name,
+        x:c.rows.map((r)=>r.nodes),y:c.rows.map((r)=>speedup?c.rows[0].sim_s/r.sim_s:r.sim_s),
+        line:{color:css(c.color),width:2},marker:{size:7},
+        hovertemplate:`${c.name}<br>%{x} nodes<br>%{y:.3f}${speedup?"x":" s"}<extra></extra>`}));
+      draw(`${prefix}-${speedup?"speedup":"time"}`,traces,{height:370,title:{text:speedup?"Speedup vs 4-node baseline":"Simulation time vs node count"},
+        xaxis:{title:{text:"Nodes"},tickvals:[4,8,16]},yaxis:{title:{text:speedup?"Speedup":"Simulation time (seconds)"},rangemode:"tozero"}});
+    }
+  }
+}
+const IM = {runs:new Set(D.profiles.filter((p)=>p.clean).map((p)=>p.name))};
+chipGroup($("imbalance-controls"),"Profiles",D.profiles.map((p)=>[p.name,`${p.nodes} nodes - ${p.name.replace(/^p_n0[24]_avx2_?/,"")||"primary"}`]),IM.runs,true,drawImbalance);
+function drawImbalance() {
+  const cols=["--avx2","--sse3","--novec","--killed","--muted"];
+  const traces=D.profiles.map((p,i)=>({p,col:cols[i%cols.length]})).filter(({p})=>IM.runs.has(p.name)).map(({p,col})=>({
+    type:"scatter",mode:"lines+markers",name:p.name,x:p.ranks.map((r)=>r.rank),y:p.ranks.map((r)=>100*r.mpi/r.app),
+    customdata:p.ranks.map((r)=>r.host),line:{color:css(col),width:1.5},marker:{size:5},hovertemplate:"Rank %{x} - %{customdata}<br>MPI %{y:.2f}%<extra></extra>"}));
+  draw("imbalance-plot",traces,{height:450,title:{text:"MPI time (%) by rank"},xaxis:{title:{text:"MPI rank"},dtick:4},yaxis:{title:{text:"MPI time (%)"},range:[0,105]}});
+}
+
+// ---- Results table -------------------------------------------------------------------------
+const COLS = [["run", (r) => label(r), (r) => r.name], ["nodes", (r) => r.nodes], ["workers", (r) => r.workers],
+  ["build", (r) => BUILDS[r.build]], ["monitoring", (r) => r.monitoring], ["sim time (h)", (r) => (r.sim_s / 3600).toFixed(2), (r) => r.sim_s],
+  ["MLUPS", (r) => r.mlups.toFixed(2), (r) => r.mlups], ["MLUPS/core", (r) => r.mlups_core.toFixed(3), (r) => r.mlups_core],
+  ["attempt", (r) => r.attempt]];
+let sortCol = 6, sortDir = -1;
+function drawTable() {
+  const rows = [...D.results].sort((a, b) => {
+    const k = COLS[sortCol][2] || COLS[sortCol][1]; const x = k(a), y = k(b);
+    return (x > y ? 1 : x < y ? -1 : 0) * sortDir; });
+  $("results").innerHTML = "<thead><tr>" + COLS.map(([h], i) =>
+    `<th><button type="button" data-i="${i}">${h}${i === sortCol ? (sortDir > 0 ? " \u2191" : " \u2193") : ""}</button></th>`).join("") +
+    "</tr></thead><tbody>" + rows.map((r) => "<tr>" + COLS.map(([, f], i) => i === 0 ? `<td>${r.name}</td>` :
+      i === 3 ? `<td><span class="tag">${f(r)}</span></td>` : `<td>${f(r)}</td>`).join("") + "</tr>").join("") + "</tbody>";
+  for (const b of $("results").querySelectorAll("th button")) b.addEventListener("click", () => {
+    const i = +b.dataset.i; sortDir = i === sortCol ? -sortDir : (i === 0 || i === 3 || i === 4 ? 1 : -1); sortCol = i; drawTable(); });
+}
+
+// ---- MPI profile: supplied slide layout -----------------------------------------------
+function drawProfile() {}
+
+// ---- tabs, theme, first render -------------------------------------------------------------
+const DRAW = { speed: drawSpeed, scaling: drawScaling, imbalance: drawImbalance, table: drawTable, profile: drawProfile };
+let current = "speed";
+function show(tab) {
+  current = tab;
+  for (const b of $("tabs").querySelectorAll("button")) b.setAttribute("aria-selected", b.dataset.tab === tab);
+  for (const s of document.querySelectorAll("[data-panel]")) s.hidden = s.dataset.panel !== tab;
+  DRAW[tab]();
+  try { localStorage.setItem("isc-tab", tab); } catch (e) {}
+}
+for (const b of $("tabs").querySelectorAll("button")) b.addEventListener("click", () => show(b.dataset.tab));
+const redraw = () => DRAW[current]();
+let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(redraw, 150); });
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", redraw);
+new MutationObserver(redraw).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+let start = "speed";
+const hash = location.hash.slice(1);
+try { start = DRAW[hash] ? hash : (DRAW[localStorage.getItem("isc-tab")] ? localStorage.getItem("isc-tab") : "speed"); } catch (e) { if (DRAW[hash]) start = hash; }
+show(start);
+})();
+</script>
+</body>
+</html>
