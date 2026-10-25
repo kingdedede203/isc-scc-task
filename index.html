@@ -37,6 +37,7 @@ nav button { font: 500 14px var(--sans); color: var(--ink-2); background: none; 
   border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer; white-space: nowrap; }
 nav button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--ink); }
 .controls { display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center; margin-block: 4px 12px; }
+.controls[hidden] { display: none; }
 .group { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .group > span { font: 11px var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-right: 4px; }
 .chip { font: 13px var(--sans); color: var(--ink); background: var(--chip); border: 1px solid transparent;
@@ -72,7 +73,7 @@ tr:last-child td { border-bottom: 0; }
 .line-key { display: inline-block; width: 22px; border-top: 2px solid var(--ink-2); vertical-align: middle; margin-right: 4px; }
 .line-key.dotted { border-top-style: dotted; }
 .task-tag { display: inline-block; margin-right: 7px; font: 600 10px var(--mono); letter-spacing: .03em; padding: 3px 5px; border-radius: 4px; color: var(--accent); background: var(--chip); }
-nav button[data-tab="profile"] { margin-left: 12px; border-left: 1px solid var(--line); }
+nav button[data-tab="profile"], nav button[data-tab="flow"] { margin-left: 12px; border-left: 1px solid var(--line); }
 @media (max-width: 600px) { .plot-guide strong { min-width: 90px; } }
 
 .mpi-slide{background:white;color:#161616;border:1px solid #d6d6dc;font-family:Arial,sans-serif;overflow:hidden}
@@ -107,6 +108,14 @@ nav button[data-tab="profile"] { margin-left: 12px; border-left: 1px solid var(-
 .analysis-case small{font-weight:400;color:var(--ink-2);font-size:12px;margin-left:10px}.analysis-caption{font-size:12.5px;color:var(--ink-2);margin:10px 0 24px}
 
 @media(max-width:760px){.mpi-summary-grid[style]{grid-template-columns:1fr!important}}
+
+.flow-media { background: #ffffff; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; margin: 0; }
+.flow-media video, .flow-media img { display: block; width: 100%; height: auto; }
+.flow-media figcaption { font-size: 12.5px; color: #4f5861; padding: 8px 12px 10px; border-top: 1px solid #e2e6ea; }
+.flow-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+.flow-grid .wide { grid-column: 1 / -1; }
+.flow-grid .narrow { grid-column: 1 / -1; max-width: 860px; justify-self: center; }
+@media (max-width: 760px) { .flow-grid { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
@@ -118,10 +127,12 @@ nav button[data-tab="profile"] { margin-left: 12px; border-left: 1px solid var(-
 <nav id="tabs" role="tablist">
 <button aria-selected="true" data-tab="speed" role="tab"><span class="task-tag">TASK 1</span>Speed over time</button>
 <button aria-selected="false" data-tab="scaling" role="tab"><span class="task-tag">TASK 1</span>Scaling</button>
-<button aria-selected="false" data-tab="imbalance" role="tab"><span class="task-tag">TASK 1</span>MPI imbalance</button>
 <button aria-selected="false" data-tab="table" role="tab"><span class="task-tag">TASK 1</span>All results</button>
 <button aria-selected="false" data-tab="profile" role="tab"><span class="task-tag">TASK 3</span>MPI profile</button>
+<button aria-selected="false" data-tab="imbalance" role="tab"><span class="task-tag">TASK 3</span>MPI imbalance</button>
+<button aria-selected="false" data-tab="flow" role="tab"><span class="task-tag">TASK 4</span>Flow video</button>
 </nav>
+<div class="controls" id="run-controls"></div>
 <section data-panel="speed">
 <div class="controls" id="speed-controls"></div>
 <div class="plot" id="speed-plot"></div>
@@ -137,21 +148,16 @@ nav button[data-tab="profile"] { margin-left: 12px; border-left: 1px solid var(-
 </section>
 <section data-panel="scaling" hidden="">
 <h2 class="analysis-heading">CPU scaling analysis</h2>
+<p class="analysis-caption" id="scaling-machines"></p>
 <h3 class="analysis-case">Case A: Monitoring on / off <small>AVX2 + SSE3 &#183; 8 workers/node</small></h3>
 <div class="pair"><div class="plot" id="monitor-time"></div><div class="plot" id="monitor-speedup"></div></div>
 <p class="analysis-caption">Monitoring changes runtime; shared-lab waiting obscures its cost.</p>
 <h3 class="analysis-case">Case B: SIMD analysis <small>Monitoring on &#183; 8 workers/node</small></h3>
 <div class="pair"><div class="plot" id="simd-time"></div><div class="plot" id="simd-speedup"></div></div>
-<p class="analysis-caption">No intrinsics build consistently wins. Speedup uses each series' 4-node baseline.</p>
+<p class="analysis-caption">No intrinsics build consistently wins. Speedup uses each series' <span class="scaling-base">4</span>-node baseline.</p>
 <h3 class="analysis-case">Case C: Workers per node <small>AVX2 + SSE3 &#183; Monitoring on</small></h3>
 <div class="pair"><div class="plot" id="workers-time"></div><div class="plot" id="workers-speedup"></div></div>
-<p class="analysis-caption">New best: 186.03 MLUPS &#183; 16 nodes &#183; 4 workers/node. Each series uses its own 4-node baseline.</p>
-</section>
-<section data-panel="imbalance" hidden="">
-<h2 class="analysis-heading">MPI imbalance</h2>
-<div class="controls" id="imbalance-controls"></div>
-<div class="plot" id="imbalance-plot"></div>
-<p class="analysis-caption"><span class="key-avx2">MPI time / application time</span> by rank. Rank 0 coordinates; workers show unequal waiting.</p>
+<p class="analysis-caption">New best: 186.03 MLUPS &#183; 16 nodes &#183; 4 workers/node. Each series uses its own <span class="scaling-base">4</span>-node baseline.</p>
 </section>
 <section data-panel="table" hidden="">
 <div class="tablewrap"><table id="results"></table></div>
@@ -163,6 +169,25 @@ nav button[data-tab="profile"] { margin-left: 12px; border-left: 1px solid var(-
 </section>
 <section data-panel="profile" hidden="">
 <div class="mpi-slide"><div class="mpi-slide-banner">Top MPI calls for CPU</div><div class="mpi-slide-body"><h2>Local lab runs - all nodes pinned</h2><div class="mpi-summary-grid" style="grid-template-columns:repeat(2,minmax(0,1fr))"><div class="mpi-summary"><div class="mpi-metrics"><div class="mpi-metric-title">MPI Time</div><div title="Sum of exported per-rank MPI seconds">2,059.00 s <span class="mpi-muted">(rank-summed)</span></div><div><span class="mpi-percent">37.11%</span> <span class="mpi-muted">of all-rank application time</span></div></div><div class="mpi-imbalance">MPI Imbalance<br/><span>N/A*</span></div><div class="mpi-top-title"><span>TOP 5 MPI Functions</span><span>% of App Time</span></div><table aria-label="Top MPI calls, 2 nodes"><tbody><tr><td>MPI_Waitall</td><td>36.8874%</td></tr><tr><td>MPI_Gather</td><td>0.1912%</td></tr><tr><td>MPI_Isend</td><td>0.0029%</td></tr><tr><td>MPI_Type_free</td><td>0.0025%</td></tr><tr><td>MPI_Irecv</td><td>0.0010%</td></tr></tbody></table><div class="mpi-summary-label">2 Nodes with pinning<small>400 steps &#183; 7 workers/node</small></div></div><div class="mpi-summary"><div class="mpi-metrics"><div class="mpi-metric-title">MPI Time</div><div title="Sum of exported per-rank MPI seconds">3,909.50 s <span class="mpi-muted">(rank-summed)</span></div><div><span class="mpi-percent">35.06%</span> <span class="mpi-muted">of all-rank application time</span></div></div><div class="mpi-imbalance">MPI Imbalance<br/><span>N/A*</span></div><div class="mpi-top-title"><span>TOP 5 MPI Functions</span><span>% of App Time</span></div><table aria-label="Top MPI calls, 4 nodes"><tbody><tr><td>MPI_Waitall</td><td>34.8685%</td></tr><tr><td>MPI_Gather</td><td>0.1720%</td></tr><tr><td>MPI_Isend</td><td>0.0069%</td></tr><tr><td>MPI_Type_free</td><td>0.0056%</td></tr><tr><td>MPI_Irecv</td><td>0.0024%</td></tr></tbody></table><div class="mpi-summary-label">4 Nodes with pinning<small>800 steps &#183; 7 workers/node</small></div></div></div><p class="mpi-slide-note"><code>MPI_Waitall</code> dominates both profiles. Next by recorded time: <code>MPI_Gather</code>, <code>MPI_Isend</code>.<br/><span class="mpi-muted">*Profiler imbalance metric unavailable. All-rank totals include coordinator rank 0; aggregate seconds are not wall time.</span></p></div><div class="mpi-slide-footer">TASK 3 &#183; MPI PROFILING</div></div>
+</section>
+<section data-panel="flow" hidden="">
+<h2 class="analysis-heading">Blood flow over one heartbeat</h2>
+<figure class="flow-media"><video controls loop muted playsinline preload="metadata" poster="flow/poster.png" src="flow/heartbeat.mp4" aria-label="Video of blood flow in the aneurysm over one heartbeat"></video>
+<figcaption>One heartbeat (0.8 s of blood flow) played in 5 seconds. Top: a slice along the vessel. Bottom: inside the aneurysm, across it, and the mean flow through plane 1 over time (the red dot is now).</figcaption></figure>
+<h3 class="analysis-case">At the two moments of strongest flow <small>t = 0.20 s into the aneurysm &#183; t = 0.62 s back out</small></h3>
+<div class="flow-grid">
+<figure class="flow-media narrow"><img alt="Overview: the vessel coloured by speed, with the cut planes shown" loading="lazy" src="flow/overview.png"/><figcaption>Where the pictures come from: cut planes through the vessel and the aneurysm.</figcaption></figure>
+<figure class="flow-media wide"><img alt="Flow across the aneurysm at t = 0.20 s" loading="lazy" src="flow/cross_sections_forward.png"/><figcaption>Across the aneurysm at 0.20 s: blood moves deeper in (red).</figcaption></figure>
+<figure class="flow-media wide"><img alt="Flow across the aneurysm at t = 0.62 s" loading="lazy" src="flow/cross_sections_backward.png"/><figcaption>Across the aneurysm at 0.62 s: blood moves back out (blue).</figcaption></figure>
+<figure class="flow-media"><img alt="Direction of flow inside the aneurysm at t = 0.20 s" loading="lazy" src="flow/arrows_forward.png"/><figcaption>Direction inside the aneurysm at 0.20 s.</figcaption></figure>
+<figure class="flow-media"><img alt="Direction of flow inside the aneurysm at t = 0.62 s" loading="lazy" src="flow/arrows_backward.png"/><figcaption>Direction inside the aneurysm at 0.62 s.</figcaption></figure>
+</div>
+</section>
+<section data-panel="imbalance" hidden="">
+<h2 class="analysis-heading">MPI imbalance</h2>
+<div class="controls" id="imbalance-controls"></div>
+<div class="plot" id="imbalance-plot"></div>
+<p class="analysis-caption"><span class="key-avx2">MPI time / application time</span> by rank. Rank 0 coordinates; workers show unequal waiting.</p>
 </section>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.34.0/plotly-basic.min.js"></script>
@@ -180,6 +205,22 @@ const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v
 const BUILDS = { avx2: "AVX2+SSE3", sse3: "SSE3 only", novec: "no intrinsics" };
 const label = (r) => `${r.nodes} nodes \u00b7 ${BUILDS[r.build]} \u00b7 mon ${r.monitoring}` + (r.ppn !== 8 ? ` \u00b7 ${r.ppn}/node` : "");
 const done = D.results.length;
+// Clean re-runs (README 12.34) replace the first run of the same configuration in the scaling plots; the first
+// run stays in the speed plot, the MLUPS bars and the table so the two can be compared.
+const OLD = D.superseded || [];
+const redone = new Set(OLD.map((r) => r.name));
+// Past 90% of its steps a clean job is not killed for other users' processes; it says from which step they were there.
+const graceNote = (r) => r.grace_step ? `other users on its machines from step ${r.grace_step.toLocaleString()} (allowed past 90%)` : "";
+// "Runs" filter above the Task 1 tabs: every run, or clean re-runs only (README 12.34).
+let RUNS = new Set(["all"]);
+try { if (localStorage.getItem("isc-runs") === "clean") RUNS = new Set(["clean"]); } catch (e) {}
+// "Machines" filter: i7 (csews160-200), i9 (csewsrm1-50, shared runs: several of ours at once, README 12.36), or both.
+let MACH = new Set(["all"]);
+try { const m = localStorage.getItem("isc-mach"); if (m === "i7" || m === "i9") MACH = new Set([m]); } catch (e) {}
+const onMach = (r) => MACH.has("all") || MACH.has("i9") === (r.campaign === "i9");
+const keep = (r) => (!RUNS.has("clean") || r.campaign === "clean") && onMach(r);
+const tagged = (r) => label(r) + (r.campaign === "clean" ? " \u00b7 clean re-run" : r.campaign === "i9" ? " \u00b7 i9 \u00b7 shared" :
+  redone.has(r.name) ? " \u00b7 first run" : "");
 
 // ---- shared plot styling -------------------------------------------------------------------
 function layout(extra) {
@@ -252,20 +293,21 @@ const clock = (start, h) => { const d = new Date(new Date(start).getTime() + h *
 function drawSpeed() {
   const all = S.show.has("all");
   const sel = D.attempts.filter((a) => S.nodes.has(a.nodes) && S.build.has(a.build) && S.mon.has(a.monitoring) &&
-    S.ppn.has(a.ppn) && a.series.length > 1 && (all || a.status === "done"));
+    S.ppn.has(a.ppn) && a.series.length > 1 && (all || a.status === "done") && keep(a));
   const byHours = S.x.has("hours"), byClock = S.x.has("clock"), k = [...S.smooth][0];
   const xOf = (a, p) => byClock ? clock(a.start, p[1]) : byHours ? p[1] : p[0];
   const traces = sel.map((a) => {
-    const name = label(a) + (a.attempt > 1 ? ` \u00b7 try ${a.attempt}` : "");
+    const name = tagged(a) + (a.attempt > 1 ? ` \u00b7 try ${a.attempt}` : "");
     const fate = a.status === "done" ? `done, ${a.mlups ? a.mlups.toFixed(1) + " MLUPS" : ""}` :
                  a.status === "running" ? `running, step ${a.last_step.toLocaleString()}` :
+                 a.status === "withdrawn" ? `finished, but ${a.why}` :
                  `killed at step ${a.last_step.toLocaleString()}: ${a.why}`;
     return { type: "scatter", mode: "lines", name, legendgroup: name, x: a.series.map((p) => xOf(a, p)), y: smooth(a.series.map((p) => p[2]), k),
       line: { color: css(`--${a.build}`), width: a.status === "done" ? 2 : 1.4, dash: a.monitoring === "on" ? "solid" : "dot",
               shape: "linear" },
       opacity: a.status === "done" ? 1 : 0.55,
       hovertemplate: `<b>${name}</b><br>${byClock ? "%{x}" : `%{x:,} ${byHours ? "h" : "steps"}`} \u00b7 %{y:.3f} s/step<br>${fate}<br>` +
-        `started ${a.start.replace("T", " ")} on ${a.hosts.length} machines<extra></extra>` };
+        `started ${a.start.replace("T", " ")} on ${a.hosts.length} machines` + (a.grace_step ? `<br>${graceNote(a)}` : "") + "<extra></extra>" };
   });
   const runs = traces.length, few = runs <= 3, surf = css("--surface");
   for (const t of traces) t.showlegend = runs <= 14;
@@ -303,16 +345,16 @@ function drawSpeed() {
     yaxis: { title: { text: "seconds per time step" }, rangemode: "tozero" }, showlegend: true });
 
   // MLUPS of the selected finished runs
-  const fin = D.results.filter((r) => S.nodes.has(r.nodes) && S.build.has(r.build) && S.mon.has(r.monitoring) && S.ppn.has(r.ppn))
+  const fin = [...D.results, ...OLD].filter((r) => S.nodes.has(r.nodes) && S.build.has(r.build) && S.mon.has(r.monitoring) && S.ppn.has(r.ppn) && keep(r))
     .sort((a, b) => a.mlups - b.mlups);
   if (!fin.length) { Plotly.purge("speed-bars"); $("speed-bars").innerHTML = '<p class="empty">No finished runs match these filters.</p>'; return; }
-  draw("speed-bars", [{ type: "bar", orientation: "h", y: fin.map(label), x: fin.map((r) => r.mlups),
+  draw("speed-bars", [{ type: "bar", orientation: "h", y: fin.map(tagged), x: fin.map((r) => r.mlups),
     marker: { color: fin.map((r) => css(`--${r.build}`)), line: { color: css("--surface"), width: 1 },
               pattern: { shape: fin.map((r) => r.monitoring === "off" ? "/" : ""), fgcolor: css("--surface"), solidity: 0.25 } },
     text: fin.map((r) => r.mlups.toFixed(1)), textposition: "outside", cliponaxis: false,
     textfont: { color: css("--ink-2"), family: css("--mono"), size: 11 },
-    customdata: fin.map((r) => [(r.sim_s / 3600).toFixed(2), r.mlups_core.toFixed(2), r.workers]),
-    hovertemplate: "<b>%{y}</b><br>%{x:.1f} MLUPS \u00b7 %{customdata[1]} per core<br>%{customdata[0]} h simulation \u00b7 %{customdata[2]} workers<extra></extra>" }],
+    customdata: fin.map((r) => [(r.sim_s / 3600).toFixed(2), r.mlups_core.toFixed(2), r.workers, r.grace_step ? "<br>" + graceNote(r) : ""]),
+    hovertemplate: "<b>%{y}</b><br>%{x:.1f} MLUPS \u00b7 %{customdata[1]} per core<br>%{customdata[0]} h simulation \u00b7 %{customdata[2]} workers%{customdata[3]}<extra></extra>" }],
     { height: 120 + 22 * fin.length, title: { text: "Total MLUPS (hatched = monitoring off)" },
       margin: { l: 56, r: 48, t: 40, b: 40 }, xaxis: { title: { text: "MLUPS" }, rangemode: "tozero" },
       yaxis: { automargin: true }, showlegend: false, bargap: 0.25 });
@@ -325,15 +367,23 @@ function drawScaling() {
     ["simd", Object.keys(BUILDS).map((build)=>({name:BUILDS[build],build,mon:"on",color:`--${build}`}))],
     ["workers", [4,8,12].map((ppn,i)=>({name:`${ppn} workers/node`,build:"avx2",mon:"on",ppn,color:["--avx2","--sse3","--novec"][i]}))]
   ];
+  // never mix machine types in one line: i9 only when "i9 only" is chosen, else i7
+  const i9 = MACH.has("i9");
+  $("scaling-machines").textContent = i9 && RUNS.has("clean") ? "There are no clean runs on the i9 machines. Choose \u201call runs\u201d above to see their shared runs." :
+    i9 ? "These plots show the i9 machines (csewsrm1\u201350). They are shared runs: several of our jobs ran at once, so speeds changed during runs." :
+    "These plots show the i7 machines (csews160\u2013200)." + (MACH.has("all") ? " Choose \u201ci9 only\u201d above to see the i9 machines." : "");
+  // i9 has 2-node runs (62 GB machines), so its speed-up starts at 2 nodes; i7 can't hold the case on 2 (README 12.36)
+  const base = i9 ? 2 : 4;
+  for (const e of document.querySelectorAll(".scaling-base")) e.textContent = base;
   for (const [prefix, configs] of groups) {
-    const series = configs.map((c)=>({...c,rows:D.results.filter((r)=>r.ppn===(c.ppn||8) && r.build===c.build && r.monitoring===c.mon).sort((a,b)=>a.nodes-b.nodes)}));
+    const series = configs.map((c)=>({...c,rows:D.results.filter((r)=>r.ppn===(c.ppn||8) && r.build===c.build && r.monitoring===c.mon && keep(r) && (r.campaign === "i9") === i9).sort((a,b)=>a.nodes-b.nodes)}));
     for (const speedup of [false,true]) {
-      const traces = series.filter((c)=>c.rows.length).map((c)=>({type:"scatter",mode:"lines+markers",name:c.name,
+      const traces = series.filter((c)=>c.rows.length && (!speedup || c.rows[0].nodes===base)).map((c)=>({type:"scatter",mode:"lines+markers",name:c.name,
         x:c.rows.map((r)=>r.nodes),y:c.rows.map((r)=>speedup?c.rows[0].sim_s/r.sim_s:r.sim_s),
         line:{color:css(c.color),width:2},marker:{size:7},
         hovertemplate:`${c.name}<br>%{x} nodes<br>%{y:.3f}${speedup?"x":" s"}<extra></extra>`}));
-      draw(`${prefix}-${speedup?"speedup":"time"}`,traces,{height:370,title:{text:speedup?"Speedup vs 4-node baseline":"Simulation time vs node count"},
-        xaxis:{title:{text:"Nodes"},tickvals:[4,8,16]},yaxis:{title:{text:speedup?"Speedup":"Simulation time (seconds)"},rangemode:"tozero"}});
+      draw(`${prefix}-${speedup?"speedup":"time"}`,traces,{height:370,title:{text:speedup?`Speedup vs ${base}-node baseline`:"Simulation time vs node count"},
+        xaxis:{title:{text:"Nodes"},tickvals:i9?[2,4,8,16]:[4,8,16]},yaxis:{title:{text:speedup?"Speedup":"Simulation time (seconds)"},rangemode:"tozero"}});
     }
   }
 }
@@ -351,10 +401,11 @@ function drawImbalance() {
 const COLS = [["run", (r) => label(r), (r) => r.name], ["nodes", (r) => r.nodes], ["workers", (r) => r.workers],
   ["build", (r) => BUILDS[r.build]], ["monitoring", (r) => r.monitoring], ["sim time (h)", (r) => (r.sim_s / 3600).toFixed(2), (r) => r.sim_s],
   ["MLUPS", (r) => r.mlups.toFixed(2), (r) => r.mlups], ["MLUPS/core", (r) => r.mlups_core.toFixed(3), (r) => r.mlups_core],
-  ["attempt", (r) => r.attempt]];
+  ["attempt", (r) => r.attempt], ["campaign", (r) => (r.campaign === "clean" ? "clean re-run" : r.campaign === "i9" ? "i9 \u00b7 shared" : redone.has(r.name) ? "first (replaced)" : "first") +
+    (r.grace_step ? ` \u00b7 other users from step ${r.grace_step.toLocaleString()}` : "")]];
 let sortCol = 6, sortDir = -1;
 function drawTable() {
-  const rows = [...D.results].sort((a, b) => {
+  const rows = [...D.results, ...OLD].filter(keep).sort((a, b) => {
     const k = COLS[sortCol][2] || COLS[sortCol][1]; const x = k(a), y = k(b);
     return (x > y ? 1 : x < y ? -1 : 0) * sortDir; });
   $("results").innerHTML = "<thead><tr>" + COLS.map(([h], i) =>
@@ -362,19 +413,27 @@ function drawTable() {
     "</tr></thead><tbody>" + rows.map((r) => "<tr>" + COLS.map(([, f], i) => i === 0 ? `<td>${r.name}</td>` :
       i === 3 ? `<td><span class="tag">${f(r)}</span></td>` : `<td>${f(r)}</td>`).join("") + "</tr>").join("") + "</tbody>";
   for (const b of $("results").querySelectorAll("th button")) b.addEventListener("click", () => {
-    const i = +b.dataset.i; sortDir = i === sortCol ? -sortDir : (i === 0 || i === 3 || i === 4 ? 1 : -1); sortCol = i; drawTable(); });
+    const i = +b.dataset.i; sortDir = i === sortCol ? -sortDir : (i === 0 || i === 3 || i === 4 || i === 9 ? 1 : -1); sortCol = i; drawTable(); });
 }
 
 // ---- MPI profile: supplied slide layout -----------------------------------------------
 function drawProfile() {}
 
 // ---- tabs, theme, first render -------------------------------------------------------------
-const DRAW = { speed: drawSpeed, scaling: drawScaling, imbalance: drawImbalance, table: drawTable, profile: drawProfile };
+const DRAW = { speed: drawSpeed, scaling: drawScaling, imbalance: drawImbalance, table: drawTable, profile: drawProfile, flow: () => {} };
 let current = "speed";
+chipGroup($("run-controls"), "Runs", [["all", "all runs"], ["clean", "clean re-runs only"]], RUNS, false, () => {
+  try { localStorage.setItem("isc-runs", [...RUNS][0]); } catch (e) {}
+  DRAW[current](); });
+chipGroup($("run-controls"), "Machines", [["all", "i7 and i9"], ["i7", "i7 only"], ["i9", "i9 only"]], MACH, false, () => {
+  try { localStorage.setItem("isc-mach", [...MACH][0]); } catch (e) {}
+  DRAW[current](); });
 function show(tab) {
   current = tab;
+  $("run-controls").hidden = !["speed", "scaling", "table"].includes(tab);   // Task 1 data only
   for (const b of $("tabs").querySelectorAll("button")) b.setAttribute("aria-selected", b.dataset.tab === tab);
   for (const s of document.querySelectorAll("[data-panel]")) s.hidden = s.dataset.panel !== tab;
+  for (const v of document.querySelectorAll("[data-panel][hidden] video")) v.pause();   // stop the flow video when leaving its tab
   DRAW[tab]();
   try { localStorage.setItem("isc-tab", tab); } catch (e) {}
 }
@@ -387,6 +446,7 @@ let start = "speed";
 const hash = location.hash.slice(1);
 try { start = DRAW[hash] ? hash : (DRAW[localStorage.getItem("isc-tab")] ? localStorage.getItem("isc-tab") : "speed"); } catch (e) { if (DRAW[hash]) start = hash; }
 show(start);
+
 })();
 </script>
 </body>
