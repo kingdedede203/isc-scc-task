@@ -109,6 +109,17 @@ nav button[data-tab="profile"], nav button[data-tab="flow"] { margin-left: 12px;
 
 @media(max-width:760px){.mpi-summary-grid[style]{grid-template-columns:1fr!important}}
 
+/* Explanations under each tab's plots */
+.explain { display: grid; gap: 18px; max-width: 80ch; margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--line); }
+.explain h3 { font: 500 11px var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0 0 6px; }
+.explain ul { margin: 0; padding-left: 18px; }
+.explain li + li { margin-top: 5px; }
+.explain ul ul { margin-top: 4px; }
+.explain p { margin: 0; }
+.explain p + p { margin-top: 6px; }
+.explain code { font: 12.5px var(--mono); background: var(--chip); padding: 1px 4px; border-radius: 3px; }
+.explain a { color: var(--accent); }
+
 .flow-media { background: #ffffff; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; margin: 0; }
 .flow-media video, .flow-media img { display: block; width: 100%; height: auto; }
 .flow-media figcaption { font-size: 12.5px; color: #4f5861; padding: 8px 12px 10px; border-top: 1px solid #e2e6ea; }
@@ -144,6 +155,23 @@ nav button[data-tab="profile"], nav button[data-tab="flow"] { margin-left: 12px;
 <div title="Change threshold: 12%. Compares median speed over 2,000 steps before and after. Candidate causes: preceding 25 minutes."><strong>Changes &#8805;12%</strong> <span class="key-slower">&#9679; filled: slower</span> &#183; <span class="key-faster">&#9675; hollow: faster</span> &#183; hover for causes.</div>
 <div><strong>Compare</strong> Clock time reveals simultaneous changes.</div>
 <div><strong>Explore</strong> Legend: click hide, double-click isolate &#183; drag to zoom.</div>
+</div>
+<div class="explain">
+<section><h3>Conclusions (for clean re-runs)</h3><ul>
+<li>Speed stays constant throughout a clean run and there's no gradual slowdown or a slow warm-up. The amount of computation done per step stays nearly constant. Some changes in speed are due to the increase/decrease in network waiting times.</li>
+<li>Because of this, a smaller 5000 step simulation would have worked just as well. Not only would it have eliminated the need to run multiple simulations together at the same time, it would have also decreased the chance that someone else's run would slowdown ours.</li>
+<li>Speed changes observed were because of other jobs sharing the network and some of them were out of our control since the lab machines are open access and other users had their processes running as well.</li>
+<li>Noise in speed (time per step) varied more for runs using more nodes (machines). Time per step varied less than 3% on 4 nodes, 5% on 8 nodes, and 7% on 16 nodes.</li>
+</ul></section>
+<section><h3>Pointers</h3><ul>
+<li>Final MLUPS are noisy. The network is shared with the rest of the lab so similar runs can spend different times waiting (see Scaling).</li>
+<li>A marker is placed where the median speed over the next 2000 steps differs from the previous 2000 by at least 12% along with the most likely cause for the change in speed.</li>
+<li>The &ldquo;clock time&rdquo; x-axis option lines up runs against each other which makes lab events (reboots, network outages, etc.) easier to point out.</li>
+<li>Faded lines are attempts that were stopped (due to reboots, memory limit exceeds, network failures and other users' processes appearing on our machines for the clean runs). They're excluded from all result calculations.</li>
+</ul></section>
+<section><h3>How we got this data</h3>
+<p>Each run writes a progress line to its log every 200 steps. The controller checks the active runs and the machines they run on for any other process started by another user every 60s. This is what is used to figure out the most likely cause for slowdowns and speedups.</p>
+</section>
 </div>
 </section>
 <section data-panel="scaling" hidden="">
