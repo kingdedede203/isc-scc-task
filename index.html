@@ -46,7 +46,7 @@ nav button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(-
 .chip .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
 .chip:focus-visible, nav button:focus-visible, th button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .plot { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; min-width: 0; }
-.plot + .plot, .pair + .plot, .plot + .pair { margin-top: 12px; }
+.plot + .plot, .pair + .plot, .plot + .pair, .pair + .pair { margin-top: 12px; }
 .pair > .plot { margin-top: 0; }
 .plot { overflow: hidden; }
 .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -119,6 +119,7 @@ nav button[data-tab="profile"], nav button[data-tab="flow"] { margin-left: 12px;
 .explain p + p { margin-top: 6px; }
 .explain code { font: 12.5px var(--mono); background: var(--chip); padding: 1px 4px; border-radius: 3px; }
 .explain a { color: var(--accent); }
+.explain .eq { overflow-x: auto; }
 
 .flow-media { background: #ffffff; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; margin: 0; }
 .flow-media video, .flow-media img { display: block; width: 100%; height: auto; }
@@ -179,13 +180,33 @@ nav button[data-tab="profile"], nav button[data-tab="flow"] { margin-left: 12px;
 <p class="analysis-caption" id="scaling-machines"></p>
 <h3 class="analysis-case">Case A: Monitoring on / off <small>AVX2 + SSE3 &#183; 8 workers/node</small></h3>
 <div class="pair"><div class="plot" id="monitor-time"></div><div class="plot" id="monitor-speedup"></div></div>
-<p class="analysis-caption">Monitoring changes runtime; shared-lab waiting obscures its cost.</p>
+<div class="pair"><div class="plot" id="monitor-calc"></div><div class="plot" id="monitor-wait"></div></div>
+<p class="analysis-caption">Monitoring slows the computing part, but on 8 and 16 nodes most of each step is waiting for the network, so the total changes little and network noise can outweigh it.</p>
 <h3 class="analysis-case">Case B: SIMD analysis <small>Monitoring on &#183; 8 workers/node</small></h3>
 <div class="pair"><div class="plot" id="simd-time"></div><div class="plot" id="simd-speedup"></div></div>
-<p class="analysis-caption">No intrinsics build consistently wins. Speedup uses each series' <span class="scaling-base">4</span>-node baseline.</p>
+<div class="pair"><div class="plot" id="simd-calc"></div><div class="plot" id="simd-wait"></div></div>
+<p class="analysis-caption">No build &ldquo;wins&rdquo; consistently. Differences in the total come mainly from time spent waiting for the network, not from computing. For each line, the <span class="scaling-base">4</span>-node run is considered the baseline<span class="scaling-i7"> i.e. 8-node run with no intrinsics is 1.97 times faster than 4-node run with no intrinsics for example</span>.</p>
 <h3 class="analysis-case">Case C: Workers per node <small>AVX2 + SSE3 &#183; Monitoring on</small></h3>
 <div class="pair"><div class="plot" id="workers-time"></div><div class="plot" id="workers-speedup"></div></div>
-<p class="analysis-caption">New best: 186.03 MLUPS &#183; 16 nodes &#183; 4 workers/node. Each series uses its own <span class="scaling-base">4</span>-node baseline.</p>
+<div class="pair"><div class="plot" id="workers-calc"></div><div class="plot" id="workers-wait"></div></div>
+<p class="analysis-caption">4, 8 or 12 worker processes per machine. For each line, the <span class="scaling-base">4</span>-node run is considered the baseline<span class="scaling-i7"> i.e. 8-node run with 12 workers is 1.14 times faster than 4-node run with 12 workers for example</span>.</p>
+<div class="explain">
+<section><h3>Conclusions</h3>
+<p>From the clean runs on the i7 machines (choose &ldquo;clean re-runs only&rdquo; to see just these).</p><ul>
+<li>More nodes made computing faster but not waiting. In Cases A and B the slowest worker's computing time fell 2.7&ndash;5.2 times from 4 to 16 nodes (4 times the machines would ideally give 4 times). Waiting time didn't fall and in 3/4 it grew so by 16 nodes, waiting took 3&ndash;7 times as long as computing. 8 nodes was hence the sweet spot. 16 nodes was slower than 8 in 3/4. The two settings not plotted here (SSE3 only and no intrinsics, both with monitoring off; see All results) behaved the same way.</li>
+<li><strong>Case A, monitoring:</strong> monitoring made the slowest worker's computing 12&ndash;22% slower. With monitoring on the whole simulation took 10% longer than with it off at 4 nodes while taking about the same time for 8 node off/on. At 16 nodes the monitoring-<em>off</em> run was the slower one, because it waited much longer due to the network being slower.</li>
+<li><strong>Case B, builds:</strong> no build computes consistently faster. The build that &ldquo;wins&rdquo; changes between different node counts: no intrinsics at 4 nodes, AVX2 at 8, SSE3 at 16. Lattice Boltzmann computation is usually limited by memory speed (bandwidth) than arithmetic which could explain why wider vector instructions don't help. The larger differences in MLUPS such as SSE3 and no intrinsics at 208&ndash;212 MLUPS vs AVX2 at 170 on 8 nodes come from waiting. Here AVX2 waited about 1.7 times as long compared to the other two.</li>
+<li><strong>Case C, workers per node:</strong> at 4 nodes, 4 and 8 workers per node tied (122.5 MLUPS each). At 8 nodes, 4 workers (208) beat 8 (169): its computing was slower but it waited about half as long. 12 workers per node was the slowest at every node count. Each of its workers had 1/3 less to compute compared to 8 but its slowest worker took longer compared to 8 workers at every node count. The 4 extra processes run on the slower E-cores (<a href="https://www.intel.com/content/www/us/en/support/articles/000091896.html" target="_blank" rel="noopener">reference</a>) and everyone waits for the slowest. At 16 nodes, 4 and 8 workers were about equal (186 and 189 MLUPS).</li>
+</ul></section>
+<section><h3>Pointers</h3><ul>
+<li>One setting corresponds to one run. Clean re-runs keep other users' programs off our machines, but the lab network is still shared so waiting time still varies a lot between similar runs. Small differences between lines aren't that meaningful.</li>
+<li>Computing and waiting don't add up exactly to the total (they make up 86&ndash;99% of it). The slowest worker isn't always the one that waited least. Some time also goes to monitoring and other bookkeeping.</li>
+<li>Speedup is relative to each line's own <span class="scaling-base">4</span>-node run. If the <span class="scaling-base">4</span>-node run ran on a slower network, this can cause other runs to seem better than they are.</li>
+</ul></section>
+<section><h3>How we got this data</h3>
+<p>Simulation time is the total from each run's <code>report.txt</code> (written by HemePure at the end of the run). Start-up (reading the <code>.gmy</code> file) isn't included. The lower plots in each case use &ldquo;LB calc only&rdquo; (computing) and &ldquo;MPI Wait&rdquo; (waiting for messages from other workers) from <code>report.txt</code> which HemePure records for every worker. Computing plot shows the slowest worker since every step waits for it. Waiting shows the worker that waited least time i.e. waiting time no worker could avoid.</p>
+</section>
+</div>
 </section>
 <section data-panel="table" hidden="">
 <div class="tablewrap"><table id="results"></table></div>
@@ -193,6 +214,16 @@ nav button[data-tab="profile"], nav button[data-tab="flow"] { margin-left: 12px;
 <div><strong>Time</strong> report.txt: Simulation total.</div>
 <div><strong>MLUPS</strong> 49,484,674 &#215; 50,000 / seconds / 10&#8310;.</div>
 <div><strong>Sort</strong> Click a column.</div>
+</div>
+<div class="explain">
+<section><h3>Pointers</h3><ul>
+<li>The table is a record and shouldn't be used to rank different settings.</li>
+<li>MLUPS/core divides by workers and not by all cores on the machine (not all of them are used). This also means that the only fair comparison is between runs with same worker counts.</li>
+</ul></section>
+<section><h3>How we got this data</h3>
+<p>Time = &ldquo;Simulation total&rdquo; from <code>report.txt</code>.</p>
+<div class="eq">\[ \text{MLUPS} = \frac{49{,}484{,}674 \text{ points} \times 50{,}000 \text{ steps}}{\text{simulation time (s)} \times 10^{6}} \]</div>
+</section>
 </div>
 </section>
 <section data-panel="profile" hidden="">
@@ -220,6 +251,8 @@ nav button[data-tab="profile"], nav button[data-tab="flow"] { margin-left: 12px;
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.34.0/plotly-basic.min.js"></script>
 <script src="data.js"></script>
+<script>window.MathJax = { startup: { typeset: false }, chtml: { scale: 1 } };</script>
+<script async id="MathJax-script" src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-chtml.js"></script>
 <script>
 (() => {
 const D = window.ISC_DATA;
@@ -247,7 +280,7 @@ let MACH = new Set(["all"]);
 try { const m = localStorage.getItem("isc-mach"); if (m === "i7" || m === "i9") MACH = new Set([m]); } catch (e) {}
 const onMach = (r) => MACH.has("all") || MACH.has("i9") === (r.campaign === "i9");
 const keep = (r) => (!RUNS.has("clean") || r.campaign === "clean") && onMach(r);
-const tagged = (r) => label(r) + (r.campaign === "clean" ? " \u00b7 clean re-run" : r.campaign === "i9" ? " \u00b7 i9 \u00b7 shared" :
+const tagged = (r) => label(r) + (r.from_first ? " \u00b7 clean (first campaign)" : r.campaign === "clean" ? " \u00b7 clean re-run" : r.campaign === "i9" ? " \u00b7 i9 \u00b7 shared" :
   redone.has(r.name) ? " \u00b7 first run" : "");
 
 // ---- shared plot styling -------------------------------------------------------------------
@@ -398,11 +431,12 @@ function drawScaling() {
   // never mix machine types in one line: i9 only when "i9 only" is chosen, else i7
   const i9 = MACH.has("i9");
   $("scaling-machines").textContent = i9 && RUNS.has("clean") ? "There are no clean runs on the i9 machines. Choose \u201call runs\u201d above to see their shared runs." :
-    i9 ? "These plots show the i9 machines (csewsrm1\u201350). They are shared runs: several of our jobs ran at once, so speeds changed during runs." :
+    i9 ? "These plots show the i9 machines (csewsrm1\u201350). They are shared runs: several of our jobs ran at once so speeds changed during runs and thus aren\u2019t very reliable statistics." :
     "These plots show the i7 machines (csews160\u2013200)." + (MACH.has("all") ? " Choose \u201ci9 only\u201d above to see the i9 machines." : "");
   // i9 has 2-node runs (62 GB machines), so its speed-up starts at 2 nodes; i7 can't hold the case on 2 (README 12.36)
   const base = i9 ? 2 : 4;
   for (const e of document.querySelectorAll(".scaling-base")) e.textContent = base;
+  for (const e of document.querySelectorAll(".scaling-i7")) e.hidden = i9;   // worked examples in the captions use i7 numbers
   for (const [prefix, configs] of groups) {
     const series = configs.map((c)=>({...c,rows:D.results.filter((r)=>r.ppn===(c.ppn||8) && r.build===c.build && r.monitoring===c.mon && keep(r) && (r.campaign === "i9") === i9).sort((a,b)=>a.nodes-b.nodes)}));
     for (const speedup of [false,true]) {
@@ -413,6 +447,15 @@ function drawScaling() {
       draw(`${prefix}-${speedup?"speedup":"time"}`,traces,{height:370,title:{text:speedup?`Speedup vs ${base}-node baseline`:"Simulation time vs node count"},
         xaxis:{title:{text:"Nodes"},tickvals:i9?[2,4,8,16]:[4,8,16]},yaxis:{title:{text:speedup?"Speedup":"Simulation time (seconds)"},rangemode:"tozero"}});
     }
+    // where the time went (report.txt timers): every worker waits for the slowest one's computing, and every worker
+    // waited at least wait_min for messages; the two add up to roughly the total. One y-range so the two compare.
+    const timed = series.map((c)=>({...c,rows:c.rows.filter((r)=>r.calc_max!=null)})).filter((c)=>c.rows.length);
+    const top = 1.05*Math.max(1,...timed.flatMap((c)=>c.rows.flatMap((r)=>[r.calc_max,r.wait_min])));
+    for (const [key,field,title] of [["calc","calc_max","Computing time (slowest worker)"],["wait","wait_min","Waiting time (least of any worker)"]])
+      draw(`${prefix}-${key}`,timed.map((c)=>({type:"scatter",mode:"lines+markers",name:c.name,
+        x:c.rows.map((r)=>r.nodes),y:c.rows.map((r)=>r[field]),line:{color:css(c.color),width:2},marker:{size:7},
+        hovertemplate:`${c.name}<br>%{x} nodes<br>%{y:,.0f} s<extra></extra>`})),
+        {height:370,title:{text:title},xaxis:{title:{text:"Nodes"},tickvals:i9?[2,4,8,16]:[4,8,16]},yaxis:{title:{text:"Seconds"},range:[0,top]}});
   }
 }
 const IM = {runs:new Set(D.profiles.filter((p)=>p.clean).map((p)=>p.name))};
@@ -429,7 +472,7 @@ function drawImbalance() {
 const COLS = [["run", (r) => label(r), (r) => r.name], ["nodes", (r) => r.nodes], ["workers", (r) => r.workers],
   ["build", (r) => BUILDS[r.build]], ["monitoring", (r) => r.monitoring], ["sim time (h)", (r) => (r.sim_s / 3600).toFixed(2), (r) => r.sim_s],
   ["MLUPS", (r) => r.mlups.toFixed(2), (r) => r.mlups], ["MLUPS/core", (r) => r.mlups_core.toFixed(3), (r) => r.mlups_core],
-  ["attempt", (r) => r.attempt], ["campaign", (r) => (r.campaign === "clean" ? "clean re-run" : r.campaign === "i9" ? "i9 \u00b7 shared" : redone.has(r.name) ? "first (replaced)" : "first") +
+  ["attempt", (r) => r.attempt], ["campaign", (r) => (r.from_first ? "clean (first campaign)" : r.campaign === "clean" ? "clean re-run" : r.campaign === "i9" ? "i9 \u00b7 shared" : redone.has(r.name) ? "first (replaced)" : "first") +
     (r.grace_step ? ` \u00b7 other users from step ${r.grace_step.toLocaleString()}` : "")]];
 let sortCol = 6, sortDir = -1;
 function drawTable() {
@@ -456,6 +499,14 @@ chipGroup($("run-controls"), "Runs", [["all", "all runs"], ["clean", "clean re-r
 chipGroup($("run-controls"), "Machines", [["all", "i7 and i9"], ["i7", "i7 only"], ["i9", "i9 only"]], MACH, false, () => {
   try { localStorage.setItem("isc-mach", [...MACH][0]); } catch (e) {}
   DRAW[current](); });
+// MathJax loads async; typeset visible panels once it's ready (hidden panels measure wrongly).
+const typesetMath = () => { const M = window.MathJax;
+  if (!M || !M.typesetPromise) return;
+  const els = [...document.querySelectorAll("[data-panel]:not([hidden]) .eq")].filter((e) => !e.dataset.done);
+  els.forEach((e) => e.dataset.done = 1); if (els.length) M.typesetPromise(els).catch(() => {}); };
+const mathReady = () => window.MathJax.startup.promise.then(typesetMath);
+if (window.MathJax && window.MathJax.typesetPromise) mathReady();
+else document.getElementById("MathJax-script").addEventListener("load", mathReady);
 function show(tab) {
   current = tab;
   $("run-controls").hidden = !["speed", "scaling", "table"].includes(tab);   // Task 1 data only
@@ -463,6 +514,7 @@ function show(tab) {
   for (const s of document.querySelectorAll("[data-panel]")) s.hidden = s.dataset.panel !== tab;
   for (const v of document.querySelectorAll("[data-panel][hidden] video")) v.pause();   // stop the flow video when leaving its tab
   DRAW[tab]();
+  typesetMath();
   try { localStorage.setItem("isc-tab", tab); } catch (e) {}
 }
 for (const b of $("tabs").querySelectorAll("button")) b.addEventListener("click", () => show(b.dataset.tab));
