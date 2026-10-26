@@ -235,11 +235,36 @@ nav button[data-tab="profile"], nav button[data-tab="flow"] { margin-left: 12px;
 <figcaption>One heartbeat (0.8 s of blood flow) played in 5 seconds. Top: a slice along the vessel. Bottom: inside the aneurysm, across it, and the mean flow through plane 1 over time (the red dot is now).</figcaption></figure>
 <h3 class="analysis-case">At the two moments of strongest flow <small>t = 0.20 s into the aneurysm &#183; t = 0.62 s back out</small></h3>
 <div class="flow-grid">
-<figure class="flow-media narrow"><img alt="Overview: the vessel coloured by speed, with the cut planes shown" loading="lazy" src="flow/overview.png"/><figcaption>Where the pictures come from: cut planes through the vessel and the aneurysm.</figcaption></figure>
+<figure class="flow-media narrow"><img alt="Overview: the vessel coloured by speed, with the cut planes shown" loading="lazy" src="flow/overview.png"/><figcaption>Cut planes through the vessel and the aneurysm.</figcaption></figure>
 <figure class="flow-media wide"><img alt="Flow across the aneurysm at t = 0.20 s" loading="lazy" src="flow/cross_sections_forward.png"/><figcaption>Across the aneurysm at 0.20 s: blood moves deeper in (red).</figcaption></figure>
 <figure class="flow-media wide"><img alt="Flow across the aneurysm at t = 0.62 s" loading="lazy" src="flow/cross_sections_backward.png"/><figcaption>Across the aneurysm at 0.62 s: blood moves back out (blue).</figcaption></figure>
 <figure class="flow-media"><img alt="Direction of flow inside the aneurysm at t = 0.20 s" loading="lazy" src="flow/arrows_forward.png"/><figcaption>Direction inside the aneurysm at 0.20 s.</figcaption></figure>
 <figure class="flow-media"><img alt="Direction of flow inside the aneurysm at t = 0.62 s" loading="lazy" src="flow/arrows_backward.png"/><figcaption>Direction inside the aneurysm at 0.62 s.</figcaption></figure>
+</div>
+<div class="explain">
+<section><h3>Conclusions</h3><ul>
+<li>The simulation shows that blood moves in and out of the aneurysm with each heartbeat. It flows in most strongly at 0.20 s and back out most strongly at 0.62 s. This comes from how the case is set up and not from real blood flow (see below).</li>
+<li>Blood in the main vessel moves at over 1 cm/s but inside the aneurysm it is much slower. The deepest cross-section (plane 3) has 4&ndash;5 times weaker flow than the one nearest the vessel (plane 1).</li>
+</ul>
+</section>
+<section><h3>How realistic is this?</h3>
+<p>The vessel's shape is realistic but the flow is not. The case is built to stress test the computation.</p><ul>
+<li><strong>Realistic:</strong> the geometry is a basilar artery (deduced from the BA in the <code>.gmy</code> file name), slow flow inside compared with the main vessel which is also seen in real aneurysms.</li>
+<li><strong>Not realistic:</strong> flow pressure is pretty small so blood goes back and forth at roughly 30&ndash;50 times lower speed than in a real artery. Real brain arteries carry blood forward through the whole heartbeat. At real speeds blood enters an aneurysm and swirls around inside it.</li>
+<li>None of this affects the speed results in Task 1 as each step does the same amount of computing either way.</li>
+</ul>
+</section>
+<section><h3>Pointers</h3><ul>
+<li>Speed pictures use one colour scale (dark = still, yellow = fast). The cross-sections show flow through the plane and red = deeper into the aneurysm, blue = back out, grey = still. Each cross-section has its own scale because plane 3's flow would be almost invisible on plane 1's scale.</li>
+<li>The arrows show direction only.</li>
+<li>HemePure only saves the cut planes listed in the input file and the full volume is never written in a 50000-step run.</li>
+</ul>
+</section>
+<section><h3>How we got this data</h3><ul>
+<li>A normal run saves the planes every 5000 steps which gives only 10 frames per heartbeat (50000-step run). So we ran the case once more (4 nodes, AVX2, monitoring off) with the planes saved every 500 steps, which gives 100 frames.</li>
+<li>The frames are saved in a binary file <code>.dat</code> (from the dependencies used, it seems to use the XDR binary format) which is converted to plain text using <code>hemeXtract</code>. A python script converts plain text to VTK files. ParaView 6.0.1 then draws these as images. Images are laid out using matplotlib and frames are combined using ffmpeg.</li>
+</ul>
+</section>
 </div>
 </section>
 <section data-panel="imbalance" hidden="">
