@@ -228,6 +228,22 @@ nav button[data-tab="profile"], nav button[data-tab="flow"] { margin-left: 12px;
 </section>
 <section data-panel="profile" hidden="">
 <div class="mpi-slide"><div class="mpi-slide-banner">Top MPI calls for CPU</div><div class="mpi-slide-body"><h2>Local lab runs - all nodes pinned</h2><div class="mpi-summary-grid" style="grid-template-columns:repeat(2,minmax(0,1fr))"><div class="mpi-summary"><div class="mpi-metrics"><div class="mpi-metric-title">MPI Time</div><div title="Sum of exported per-rank MPI seconds">2,059.00 s <span class="mpi-muted">(rank-summed)</span></div><div><span class="mpi-percent">37.11%</span> <span class="mpi-muted">of all-rank application time</span></div></div><div class="mpi-imbalance">MPI Imbalance<br/><span>N/A*</span></div><div class="mpi-top-title"><span>TOP 5 MPI Functions</span><span>% of App Time</span></div><table aria-label="Top MPI calls, 2 nodes"><tbody><tr><td>MPI_Waitall</td><td>36.8874%</td></tr><tr><td>MPI_Gather</td><td>0.1912%</td></tr><tr><td>MPI_Isend</td><td>0.0029%</td></tr><tr><td>MPI_Type_free</td><td>0.0025%</td></tr><tr><td>MPI_Irecv</td><td>0.0010%</td></tr></tbody></table><div class="mpi-summary-label">2 Nodes with pinning<small>400 steps &#183; 7 workers/node</small></div></div><div class="mpi-summary"><div class="mpi-metrics"><div class="mpi-metric-title">MPI Time</div><div title="Sum of exported per-rank MPI seconds">3,909.50 s <span class="mpi-muted">(rank-summed)</span></div><div><span class="mpi-percent">35.06%</span> <span class="mpi-muted">of all-rank application time</span></div></div><div class="mpi-imbalance">MPI Imbalance<br/><span>N/A*</span></div><div class="mpi-top-title"><span>TOP 5 MPI Functions</span><span>% of App Time</span></div><table aria-label="Top MPI calls, 4 nodes"><tbody><tr><td>MPI_Waitall</td><td>34.8685%</td></tr><tr><td>MPI_Gather</td><td>0.1720%</td></tr><tr><td>MPI_Isend</td><td>0.0069%</td></tr><tr><td>MPI_Type_free</td><td>0.0056%</td></tr><tr><td>MPI_Irecv</td><td>0.0024%</td></tr></tbody></table><div class="mpi-summary-label">4 Nodes with pinning<small>800 steps &#183; 7 workers/node</small></div></div></div><p class="mpi-slide-note"><code>MPI_Waitall</code> dominates both profiles. Next by recorded time: <code>MPI_Gather</code>, <code>MPI_Isend</code>.<br/><span class="mpi-muted">*Profiler imbalance metric unavailable. All-rank totals include coordinator rank 0; aggregate seconds are not wall time.</span></p></div><div class="mpi-slide-footer">TASK 3 &#183; MPI PROFILING</div></div>
+<div class="explain">
+<section><h3>Conclusions</h3><ul>
+<li>The top 3 MPI calls are the same on 2 and 4 nodes. <code>MPI_Waitall</code> then <code>MPI_Gather</code> then <code>MPI_Isend</code>.</li>
+<li>Each worker sends its data to its neighbours in a non-blocking manner but then waits using <code>MPI_Waitall</code> until the other neighbours' data arrives so this time is how long it waits for its slowest neighbour and the network.</li>
+<li>Going from 2 to 4 nodes barely changed the profile. Workers spent about a third of their time in MPI on both (32.6% and 32.8%) and a step took 0.92 s on 2 nodes and 0.48 s on 4 (1.92x faster).</li>
+</ul>
+</section>
+<section><h3>Pointers</h3><ul>
+<li>&ldquo;Rank-summed&rdquo; MPI time adds up the seconds of every process so it's much larger than the run's actual duration.</li>
+<li>Only the time step loop is profiled for 400 steps on 2 nodes and 800 on 4. The startup and file output (end of the simulation) aren't included which is why calls like <code>MPI_Init</code> and <code>MPI_File_close</code> are missing.</li>
+</ul>
+</section>
+<section><h3>How we got this data</h3>
+<p>Both runs used i9 machines from csews1&ndash;100. Another user's program kept starting on core 0, so we left that core free and ran 7 workers per machine. <a href="https://github.com/llnl/mpiP" target="_blank" rel="noopener">mpiP</a> recorded the MPI calls of every process. We measured only the time step loop by turning on the profiler using <code>MPI_Pcontrol</code>.</p>
+</section>
+</div>
 </section>
 <section data-panel="flow" hidden="">
 <h2 class="analysis-heading">Blood flow over one heartbeat</h2>
@@ -272,6 +288,26 @@ nav button[data-tab="profile"], nav button[data-tab="flow"] { margin-left: 12px;
 <div class="controls" id="imbalance-controls"></div>
 <div class="plot" id="imbalance-plot"></div>
 <p class="analysis-caption"><span class="key-avx2">MPI time / application time</span> by rank. Rank 0 coordinates; workers show unequal waiting.</p>
+<div class="explain">
+<section><h3>Conclusions</h3><ul>
+<li>Workers wait different amounts because they don't compute equally fast but the work <strong>is split evenly</strong>. Every worker finishes a step at the same moment as each needs its neighbours' data so a worker that computes faster spends the remaining time waiting.</li>
+<li>In the 2-node profile workers on csews78 (first half of the graph) spent about half their time in MPI calls against about an eighth on csews100 (second half) because csews100's workers computed about twice as slowly. Both machines have the same CPU and memory speed so we couldn't find the cause. In the 4 node profile csews100's workers were the fastest and waited the most.</li>
+<li>Rank 0 is at 100% because it's the coordinator and so only waits.</li>
+</ul>
+</section>
+<section><h3>Pointers</h3><ul>
+<li>&ldquo;MPI time&rdquo; here is mostly <code>MPI_Waitall</code> when it's waiting for data from neighbours.</li>
+<li>The extra profiles are the runs we discarded (they show some interesting behaviour though):<ul>
+<li><code>mixedmem</code>: two of its four machines had about twice the memory speed of the other two. Their workers finished computing first and spent 73&ndash;82% of their time waiting, against 6&ndash;42% on the slower pair.</li>
+<li><code>gem5cpu0</code>: another user's program (gem5) started on core 0 of every machine during the run. The four workers on core 0 took several times longer to compute. Everyone waited for them and MPI rose to 84% of the time.</li>
+<li><code>smoke_tiny</code>: a small test case.</li>
+</ul>They collectively show how one slow machine or core drags down the rest.</li>
+</ul>
+</section>
+<section><h3>How we got this data</h3>
+<p><a href="https://github.com/llnl/mpiP" target="_blank" rel="noopener">mpiP</a> generates a report with each process's total run time and time inside MPI calls. Only simulation steps are recorded using <code>MPI_Pcontrol</code>.</p>
+</section>
+</div>
 </section>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.34.0/plotly-basic.min.js"></script>
